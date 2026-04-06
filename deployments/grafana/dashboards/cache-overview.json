@@ -1,0 +1,197 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "title": "Cache Hit Ratio",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 6, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "sum(rate(cache_requests_total{status=\"hit\"}[1m])) / sum(rate(cache_requests_total{status=~\"hit|miss\"}[1m]))",
+          "legendFormat": "hit ratio"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 0.8 },
+              { "color": "green", "value": 0.9 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Cache Latency (p50 / p95 / p99)",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 10, "x": 6, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(cache_latency_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(cache_latency_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(cache_latency_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p99"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      }
+    },
+    {
+      "title": "Circuit Breaker State",
+      "type": "stat",
+      "gridPos": { "h": 6, "w": 4, "x": 16, "y": 0 },
+      "targets": [
+        {
+          "expr": "circuit_breaker_state",
+          "legendFormat": "state"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "CLOSED" }, "1": { "text": "OPEN" }, "2": { "text": "HALF-OPEN" } } }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Requests Per Second",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 10, "x": 0, "y": 6 },
+      "targets": [
+        {
+          "expr": "sum(rate(cache_requests_total[1m])) by (status)",
+          "legendFormat": "{{ status }}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      }
+    },
+    {
+      "title": "DB Fallback Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 6, "w": 10, "x": 10, "y": 6 },
+      "targets": [
+        {
+          "expr": "rate(db_fallback_total[1m])",
+          "legendFormat": "db fallback/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      }
+    },
+    {
+      "title": "Singleflight Deduplications",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "rate(singleflight_dedup_total[1m])",
+          "legendFormat": "dedup/s"
+        }
+      ]
+    },
+    {
+      "title": "Latency decomposition (p95)",
+      "type": "timeseries",
+      "description": "Декомпозиция p95 latency: cache_latency_seconds (Redis only) → middleware_request_duration_seconds (handler, SLO) → k6_http_req_duration (client-side с docker network). Горизонтальная линия 1 мс — целевой SLO.",
+      "gridPos": { "h": 8, "w": 16, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(cache_latency_seconds_bucket[1m])) by (le))",
+          "legendFormat": "cache_latency (Redis only)"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(middleware_request_duration_seconds_bucket{cache_result=\"hit\"}[1m])) by (le))",
+          "legendFormat": "middleware {hit} [SLO]"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(middleware_request_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "middleware (all)"
+        },
+        {
+          "expr": "avg(k6_http_req_duration_p95{phase=\"measurement\"})",
+          "legendFormat": "k6 http_req_duration p95 (client-side)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 0.001 }
+            ]
+          },
+          "custom": {
+            "thresholdsStyle": { "mode": "line+area" }
+          }
+        }
+      }
+    },
+    {
+      "title": "SLO compliance: % ≤ 1 ms",
+      "type": "stat",
+      "description": "Доля запросов, обработанных middleware не дольше 1 мс. hit-only: только кэш-хит запросы (формальный SLO). all: все запросы.",
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 16 },
+      "targets": [
+        {
+          "expr": "100 * sum(rate(middleware_request_duration_seconds_bucket{cache_result=\"hit\",le=\"0.001\"}[5m])) / sum(rate(middleware_request_duration_seconds_count{cache_result=\"hit\"}[5m]))",
+          "legendFormat": "hit-only"
+        },
+        {
+          "expr": "100 * sum(rate(middleware_request_duration_seconds_bucket{le=\"0.001\"}[5m])) / sum(rate(middleware_request_duration_seconds_count[5m]))",
+          "legendFormat": "all"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "yellow", "value": 90 },
+              { "color": "green", "value": 95 }
+            ]
+          }
+        }
+      },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false },
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "colorMode": "background"
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["investor-cache"],
+  "templating": { "list": [] },
+  "time": { "from": "now-15m", "to": "now" },
+  "title": "Investor Cache — Overview",
+  "uid": "investor-cache-overview"
+}
